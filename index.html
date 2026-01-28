@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Công cụ Xử lý Dữ liệu CTV</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧮 Công cụ Xử lý Dữ liệu Cộng Tác Viên</h1>
+            <p class="subtitle">Tích lũy và quản lý dữ liệu CTV theo tháng</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Phần Upload File Mẫu (Tháng 1) -->
+            <section class="upload-section">
+                <div class="section-header">
+                    <h2>📁 Bước 1: Upload File Mẫu (Tháng đầu tiên)</h2>
+                </div>
+                <div class="upload-box">
+                    <input type="file" id="templateFile" accept=".xlsx,.xls" />
+                    <label for="templateFile" class="upload-label">
+                        <span class="upload-icon">📤</span>
+                        <span>Chọn file Excel mẫu</span>
+                    </label>
+                    <div id="templateStatus" class="status-message"></div>
+                </div>
+            </section>
+
+            <!-- Phần Upload File Tháng Tiếp Theo -->
+            <section class="upload-section">
+                <div class="section-header">
+                    <h2>📊 Bước 2: Upload File Tháng Tiếp Theo</h2>
+                </div>
+                <div class="upload-box">
+                    <input type="file" id="monthlyFile" accept=".xlsx,.xls" />
+                    <label for="monthlyFile" class="upload-label">
+                        <span class="upload-icon">📥</span>
+                        <span>Chọn file tháng tiếp theo</span>
+                    </label>
+                    <div id="monthlyStatus" class="status-message"></div>
+                </div>
+            </section>
+
+            <!-- Thông tin tổng hợp -->
+            <section class="info-section">
+                <h3>📈 Thông tin tổng hợp</h3>
+                <div class="info-grid">
+                    <div class="info-card">
+                        <div class="info-label">Tổng số CTV:</div>
+                        <div class="info-value" id="totalCTV">0</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">File đã xử lý:</div>
+                        <div class="info-value" id="filesProcessed">0</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">CTV mới thêm:</div>
+                        <div class="info-value" id="newCTV">0</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">CTV đã cập nhật:</div>
+                        <div class="info-value" id="updatedCTV">0</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Nút Export -->
+            <section class="action-section">
+                <button id="exportBtn" class="btn-export" disabled>
+                    <span class="btn-icon">💾</span>
+                    <span>Xuất File Excel</span>
+                </button>
+                <button id="resetBtn" class="btn-reset">
+                    <span class="btn-icon">🔄</span>
+                    <span>Bắt đầu lại</span>
+                </button>
+            </section>
+
+            <!-- Bảng hiển thị dữ liệu -->
+            <section class="table-section">
+                <h3>📋 Dữ liệu hiện tại</h3>
+                <div class="table-container">
+                    <table id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>STT</th>
+                                <th>Tên</th>
+                                <th>Email</th>
+                                <th>CCCD/ID</th>
+                                <th>Tiền Hoa Hồng</th>
+                                <th>Thuế TNCN</th>
+                                <th>Số Tiền Trả CTV</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTableBody">
+                            <tr>
+                                <td colspan="7" class="empty-message">Chưa có dữ liệu. Vui lòng upload file mẫu.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <footer>
+            <p>© 2026 - Công cụ xử lý dữ liệu CTV</p>
+        </footer>
+    </div>
+
+    <!-- Thư viện SheetJS để xử lý Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- File JavaScript chính -->
+    <script src="app.js"></script>
+</body>
+</html>
