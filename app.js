@@ -1,6 +1,7 @@
 // Biến lưu trữ dữ liệu
 let masterData = null; // Dữ liệu file mẫu
 let masterWorkbook = null; // Workbook gốc
+let masterHeaderRowIndex = 0; // Chỉ số dòng tiêu đề
 let filesProcessed = 0;
 let newCTVCount = 0;
 let updatedCTVCount = 0;
@@ -29,8 +30,17 @@ const COLUMNS = {
     CCCD: 5,       // Cột F (index 5)
     HOA_HONG: 8,   // Cột I (index 8)
     THUE: 9,       // Cột J (index 9)
-    TIEN_TRA: 10   // Cột K (index 10)
+    TIEN_TRA: 10,  // Cột K (index 10)
+    HOA_HONG_DA_CAP: 11,    // Cột L (index 11) - HH đã cấp
+    THUE_DA_CAP: 12,        // Cột M (index 12) - Thuế TNCN đã cấp
+    TIEN_TRA_DA_CAP: 13,    // Cột N (index 13) - Thực trả đã cấp
+    HOA_HONG_CAN_CAP: 14,   // Cột O (index 14) - HH chưa cấp
+    THUE_CAN_CAP: 15,       // Cột P (index 15) - Thuế TNCN chưa cấp
+    TIEN_TRA_CAN_CAP: 16    // Cột Q (index 16) - Thực trả chưa cấp
 };
+
+// Biến lưu thông tin tháng của file hiện tại
+let currentMonthInfo = null;
 
 // Xử lý upload file mẫu
 templateFileInput.addEventListener('change', async (e) => {
@@ -55,12 +65,46 @@ templateFileInput.addEventListener('change', async (e) => {
                     break;
                 }
             }
+            masterHeaderRowIndex = headerRowIndex; // lưu toàn cục
             
-            // Thêm tiêu đề cho 3 cột chính
+            // Thêm tiêu đề cho 6 cột (3 cột cũ + 3 cột mới)
             const headerRow = masterData[headerRowIndex];
-            setCellValue(headerRow, COLUMNS.HOA_HONG, 'Tiền Hoa Hồng');
-            setCellValue(headerRow, COLUMNS.THUE, 'Thuế TNCN');
-            setCellValue(headerRow, COLUMNS.TIEN_TRA, 'Số Tiền Trả CTV');
+            setCellValue(headerRow, COLUMNS.HOA_HONG, 'Tổng HH Năm');
+            setCellValue(headerRow, COLUMNS.THUE, 'Tổng Thuế TNCN Năm');
+            setCellValue(headerRow, COLUMNS.TIEN_TRA, 'Tổng Thực Trả Năm');
+            setCellValue(headerRow, COLUMNS.HOA_HONG_DA_CAP, 'HH Đã Cấp');
+            setCellValue(headerRow, COLUMNS.THUE_DA_CAP, 'Thuế TNCN Đã Cấp');
+            setCellValue(headerRow, COLUMNS.TIEN_TRA_DA_CAP, 'Thực Trả Đã Cấp');
+            setCellValue(headerRow, COLUMNS.HOA_HONG_CAN_CAP, 'HH Chưa Cấp');
+            setCellValue(headerRow, COLUMNS.THUE_CAN_CAP, 'Thuế TNCN Chưa Cấp');
+            setCellValue(headerRow, COLUMNS.TIEN_TRA_CAN_CAP, 'Thực Trả Chưa Cấp');
+            
+            // Khởi tạo giá trị cho 6 cột mới dựa trên điều kiện Thuế TNCN
+            for (let i = headerRowIndex + 1; i < masterData.length; i++) {
+                const row = masterData[i];
+                const hhVal  = getCellValue(row, COLUMNS.HOA_HONG);
+                const taxVal = getCellValue(row, COLUMNS.THUE);
+                const traVal = getCellValue(row, COLUMNS.TIEN_TRA);
+                
+                // Check xem Thuế TNCN có dữ liệu hay không
+                if (hasThueData(row)) {
+                    // Có thuế: đã cấp = tổng năm, chưa cấp = 0
+                    setCellValue(row, COLUMNS.HOA_HONG_DA_CAP,  hhVal);
+                    setCellValue(row, COLUMNS.THUE_DA_CAP,       taxVal);
+                    setCellValue(row, COLUMNS.TIEN_TRA_DA_CAP,   traVal);
+                    setCellValue(row, COLUMNS.HOA_HONG_CAN_CAP,  '0');
+                    setCellValue(row, COLUMNS.THUE_CAN_CAP,       '0');
+                    setCellValue(row, COLUMNS.TIEN_TRA_CAN_CAP,   '0');
+                } else {
+                    // Không có thuế: đã cấp = 0, chưa cấp = tổng năm
+                    setCellValue(row, COLUMNS.HOA_HONG_DA_CAP,  '0');
+                    setCellValue(row, COLUMNS.THUE_DA_CAP,       '0');
+                    setCellValue(row, COLUMNS.TIEN_TRA_DA_CAP,   '0');
+                    setCellValue(row, COLUMNS.HOA_HONG_CAN_CAP,  hhVal  || '0');
+                    setCellValue(row, COLUMNS.THUE_CAN_CAP,       taxVal || '0');
+                    setCellValue(row, COLUMNS.TIEN_TRA_CAN_CAP,   traVal || '0');
+                }
+            }
         }
         
         filesProcessed = 1;
@@ -93,8 +137,21 @@ monthlyFileInput.addEventListener('change', async (e) => {
         return;
     }
 
+    // Validate tên file
+    const monthInfo = extractMonthFromFileName(file.name);
+    if (!monthInfo.isValid) {
+        monthlyStatus.innerHTML = showMonthValidationError(file.name);
+        monthlyStatus.className = 'status-message error';
+        monthlyStatus.style.display = 'block';
+        monthlyFileInput.value = '';
+        return;
+    }
+
+    // Lưu thông tin tháng
+    currentMonthInfo = monthInfo;
+
     try {
-        showStatus(monthlyStatus, 'Đang xử lý file...', 'info');
+        showStatus(monthlyStatus, `Đang xử lý file tháng ${monthInfo.month}...`, 'info');
         
         const data = await readExcelFile(file);
         const monthlyRows = data.rows;
@@ -127,13 +184,16 @@ monthlyFileInput.addEventListener('change', async (e) => {
             
             if (!cccd) continue; // Bỏ qua nếu không có CCCD
             
+            // Check điều kiện: Cột Thuế TNCN có dữ liệu hay không?
+            const hasThue = hasThueData(monthlyRow);
+            
             // Tìm CCCD trong masterData
             const existingIndex = masterData.findIndex(row => 
                 getCellValue(row, COLUMNS.CCCD) === cccd
             );
             
             if (existingIndex !== -1) {
-                // Case 1: CCCD đã tồn tại - Cộng dồn các giá trị
+                // CCCD đã tồn tại - Cộng dồn các giá trị
                 const masterRow = masterData[existingIndex];
                 
                 // Cộng dồn Hoa hồng
@@ -154,24 +214,80 @@ monthlyFileInput.addEventListener('change', async (e) => {
                 const totalTienTra = oldTienTra + newTienTra;
                 setCellValue(masterRow, COLUMNS.TIEN_TRA, totalTienTra > 0 ? formatCurrencyForExcel(totalTienTra) : '');
                 
+                // Tính cột Đã Cấp và Chưa Cấp
+                const prevDaCapHH    = parseNumber(getCellValue(masterRow, COLUMNS.HOA_HONG_DA_CAP));
+                const prevDaCapThue  = parseNumber(getCellValue(masterRow, COLUMNS.THUE_DA_CAP));
+                const prevDaCapTra   = parseNumber(getCellValue(masterRow, COLUMNS.TIEN_TRA_DA_CAP));
+                
+                let newDaCapHH   = prevDaCapHH;
+                let newDaCapThue = prevDaCapThue;
+                let newDaCapTra  = prevDaCapTra;
+                
+                if (hasThue) {
+                    // Có thuế: đã cấp += giá trị tháng hiện tại
+                    newDaCapHH   = prevDaCapHH   + newHoaHong;
+                    newDaCapThue = prevDaCapThue  + newThue;
+                    newDaCapTra  = prevDaCapTra   + newTienTra;
+                }
+                // Không có thuế: đã cấp giữ nguyên (cộng thêm 0)
+                
+                setCellValue(masterRow, COLUMNS.HOA_HONG_DA_CAP,   newDaCapHH   > 0 ? formatCurrencyForExcel(newDaCapHH)   : '0');
+                setCellValue(masterRow, COLUMNS.THUE_DA_CAP,        newDaCapThue > 0 ? formatCurrencyForExcel(newDaCapThue) : '0');
+                setCellValue(masterRow, COLUMNS.TIEN_TRA_DA_CAP,    newDaCapTra  > 0 ? formatCurrencyForExcel(newDaCapTra)  : '0');
+                
+                // Chưa cấp = Tổng năm - Đã cấp
+                const chuaCapHH   = totalHoaHong - newDaCapHH;
+                const chuaCapThue = totalThue    - newDaCapThue;
+                const chuaCapTra  = totalTienTra - newDaCapTra;
+                
+                setCellValue(masterRow, COLUMNS.HOA_HONG_CAN_CAP,  chuaCapHH   > 0 ? formatCurrencyForExcel(chuaCapHH)   : '0');
+                setCellValue(masterRow, COLUMNS.THUE_CAN_CAP,       chuaCapThue > 0 ? formatCurrencyForExcel(chuaCapThue) : '0');
+                setCellValue(masterRow, COLUMNS.TIEN_TRA_CAN_CAP,   chuaCapTra  > 0 ? formatCurrencyForExcel(chuaCapTra)  : '0');
+                
                 currentUpdatedCTV++;
                 updatedCTVList.push({
                     ten: getCellValue(monthlyRow, COLUMNS.TEN),
                     cccd: cccd,
                     hoaHong: formatCurrency(newHoaHong),
                     thue: formatCurrency(newThue),
-                    tienTra: formatCurrency(newTienTra)
+                    tienTra: formatCurrency(newTienTra),
+                    hasThue: hasThue
                 });
             } else {
-                // Case 2: CCCD mới - Thêm hàng mới
-                masterData.push([...monthlyRow]);
+                // CCCD mới - Thêm hàng mới
+                const newRow = [...monthlyRow];
+                
+                const newHH  = parseNumber(getCellValue(newRow, COLUMNS.HOA_HONG));
+                const newTax = parseNumber(getCellValue(newRow, COLUMNS.THUE));
+                const newTra = parseNumber(getCellValue(newRow, COLUMNS.TIEN_TRA));
+                
+                if (hasThue) {
+                    // Có thuế: đã cấp = giá trị tháng này, chưa cấp = 0
+                    setCellValue(newRow, COLUMNS.HOA_HONG_DA_CAP,  newHH  > 0 ? formatCurrencyForExcel(newHH)  : '0');
+                    setCellValue(newRow, COLUMNS.THUE_DA_CAP,       newTax > 0 ? formatCurrencyForExcel(newTax) : '0');
+                    setCellValue(newRow, COLUMNS.TIEN_TRA_DA_CAP,   newTra > 0 ? formatCurrencyForExcel(newTra) : '0');
+                    setCellValue(newRow, COLUMNS.HOA_HONG_CAN_CAP,  '0');
+                    setCellValue(newRow, COLUMNS.THUE_CAN_CAP,       '0');
+                    setCellValue(newRow, COLUMNS.TIEN_TRA_CAN_CAP,   '0');
+                } else {
+                    // Không có thuế: đã cấp = 0, chưa cấp = tổng
+                    setCellValue(newRow, COLUMNS.HOA_HONG_DA_CAP,  '0');
+                    setCellValue(newRow, COLUMNS.THUE_DA_CAP,       '0');
+                    setCellValue(newRow, COLUMNS.TIEN_TRA_DA_CAP,   '0');
+                    setCellValue(newRow, COLUMNS.HOA_HONG_CAN_CAP,  newHH  > 0 ? formatCurrencyForExcel(newHH)  : '0');
+                    setCellValue(newRow, COLUMNS.THUE_CAN_CAP,       newTax > 0 ? formatCurrencyForExcel(newTax) : '0');
+                    setCellValue(newRow, COLUMNS.TIEN_TRA_CAN_CAP,   newTra > 0 ? formatCurrencyForExcel(newTra) : '0');
+                }
+                
+                masterData.push(newRow);
                 currentNewCTV++;
                 newCTVList.push({
                     ten: getCellValue(monthlyRow, COLUMNS.TEN),
                     cccd: cccd,
                     hoaHong: formatCurrency(parseNumber(getCellValue(monthlyRow, COLUMNS.HOA_HONG))),
                     thue: formatCurrency(parseNumber(getCellValue(monthlyRow, COLUMNS.THUE))),
-                    tienTra: formatCurrency(parseNumber(getCellValue(monthlyRow, COLUMNS.TIEN_TRA)))
+                    tienTra: formatCurrency(parseNumber(getCellValue(monthlyRow, COLUMNS.TIEN_TRA))),
+                    hasThue: hasThue
                 });
             }
         }
@@ -193,7 +309,7 @@ monthlyFileInput.addEventListener('change', async (e) => {
         
         // Hiển thị bảng chi tiết các CTV đã cập nhật và thêm mới
         let detailHtml = `<div style="margin-top:15px; padding:15px; background:#f8f9fa; border-radius:8px;">`;
-        detailHtml += `<div style="margin-bottom:10px; font-size:16px; font-weight:bold; color:#28a745;">✓ Xử lý thành công!</div>`;
+        detailHtml += `<div style="margin-bottom:10px; font-size:16px; font-weight:bold; color:#28a745;">✓ Xử lý thành công! (Tháng ${monthInfo.month})</div>`;
         
         // Bảng CTV cập nhật
         if (updatedCTVList.length > 0) {
@@ -282,9 +398,89 @@ exportBtn.addEventListener('click', () => {
     }
 
     try {
-        // Tạo worksheet từ dữ liệu
-        const ws = XLSX.utils.aoa_to_sheet(masterData);
-        
+        // Đảm bảo dòng tiêu đề luôn có nhãn đúng trước khi xuất
+        if (masterData[masterHeaderRowIndex]) {
+            const hr = masterData[masterHeaderRowIndex];
+            setCellValue(hr, COLUMNS.HOA_HONG,         'Tổng HH Năm');
+            setCellValue(hr, COLUMNS.THUE,              'Tổng Thuế TNCN Năm');
+            setCellValue(hr, COLUMNS.TIEN_TRA,          'Tổng Thực Trả Năm');
+            setCellValue(hr, COLUMNS.HOA_HONG_DA_CAP,   'HH Đã Cấp');
+            setCellValue(hr, COLUMNS.THUE_DA_CAP,        'Thuế TNCN Đã Cấp');
+            setCellValue(hr, COLUMNS.TIEN_TRA_DA_CAP,    'Thực Trả Đã Cấp');
+            setCellValue(hr, COLUMNS.HOA_HONG_CAN_CAP,   'HH Chưa Cấp');
+            setCellValue(hr, COLUMNS.THUE_CAN_CAP,        'Thuế TNCN Chưa Cấp');
+            setCellValue(hr, COLUMNS.TIEN_TRA_CAN_CAP,    'Thực Trả Chưa Cấp');
+        }
+
+        // Các cột số tiền cần xuất dạng number
+        const CURRENCY_COLS = [
+            COLUMNS.HOA_HONG,
+            COLUMNS.THUE,
+            COLUMNS.TIEN_TRA,
+            COLUMNS.HOA_HONG_DA_CAP,
+            COLUMNS.THUE_DA_CAP,
+            COLUMNS.TIEN_TRA_DA_CAP,
+            COLUMNS.HOA_HONG_CAN_CAP,
+            COLUMNS.THUE_CAN_CAP,
+            COLUMNS.TIEN_TRA_CAN_CAP
+        ];
+
+        // Tạo bản sao dữ liệu, chuyển cột tiền sang number
+        const exportData = masterData.map(row => {
+            const newRow = [...row];
+            CURRENCY_COLS.forEach(col => {
+                const raw = newRow[col];
+                if (raw === undefined || raw === null || raw === '') return;
+                const num = parseNumber(raw);
+                // Chỉ chuyển sang number nếu thực sự là số
+                // (tránh overwrite tiêu đề cột bị parseNumber trả về 0)
+                if (num > 0 || raw === 0 || raw === '0') {
+                    newRow[col] = num;
+                }
+            });
+            return newRow;
+        });
+
+        // Tạo worksheet từ dữ liệu đã chuẩn hoá
+        const ws = XLSX.utils.aoa_to_sheet(exportData);
+
+        // Áp định dạng #,##0 cho tất cả ô thuộc cột tiền (bỏ qua dòng tiêu đề)
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        const currencyFmt = '#,##0';
+        const currencyColSet = new Set(CURRENCY_COLS);
+
+        for (let R = range.s.r + 1; R <= range.e.r; R++) {
+            CURRENCY_COLS.forEach(C => {
+                const cellAddr = XLSX.utils.encode_cell({ r: R, c: C });
+                if (ws[cellAddr] && ws[cellAddr].t === 'n') {
+                    ws[cellAddr].z = currencyFmt;
+                }
+            });
+        }
+
+        // Tính độ rộng cột: lấy độ dài ký tự lớn nhất trong mỗi cột
+        const numCols = range.e.c + 1;
+        const colWidths = Array(numCols).fill(0);
+
+        for (let R = range.s.r; R <= range.e.r; R++) {
+            for (let C = range.s.c; C <= range.e.c; C++) {
+                const cellAddr = XLSX.utils.encode_cell({ r: R, c: C });
+                const cell = ws[cellAddr];
+                if (!cell) continue;
+                let displayLen;
+                if (currencyColSet.has(C) && cell.t === 'n') {
+                    // Hiển thị với dấu phẩy để ước tính độ rộng
+                    displayLen = Math.floor(cell.v).toLocaleString('en-US').length;
+                } else {
+                    displayLen = (cell.v !== undefined && cell.v !== null)
+                        ? cell.v.toString().length : 0;
+                }
+                if (displayLen > colWidths[C]) colWidths[C] = displayLen;
+            }
+        }
+
+        ws['!cols'] = colWidths.map(w => ({ wch: Math.min(w + 2, 60) }));
+
         // Lấy tên sheet từ workbook gốc hoặc dùng mặc định
         const sheetName = masterWorkbook ? 
             masterWorkbook.SheetNames[0] : 'Sheet1';
@@ -318,6 +514,7 @@ resetBtn.addEventListener('click', () => {
         newCTVCount = 0;
         updatedCTVCount = 0;
         uploadedFiles = [];
+        currentMonthInfo = null;
         
         templateFileInput.value = '';
         monthlyFileInput.value = '';
@@ -398,6 +595,74 @@ function setCellValue(row, columnIndex, value) {
     row[columnIndex] = value;
 }
 
+// Hàm kiểm tra xem cột Thuế TNCN có dữ liệu hay không
+function hasThueData(row) {
+    const thueValue = getCellValue(row, COLUMNS.THUE);
+    
+    // Nếu không có giá trị hoặc là dấu "-"
+    if (!thueValue || thueValue === '-' || thueValue.toString().trim() === '') {
+        return false;
+    }
+    
+    // Parse giá trị và check xem có phải số > 0 không
+    const thueNum = parseNumber(thueValue);
+    return thueNum > 0;
+}
+
+// Hàm validate và extract số tháng từ tên file
+function extractMonthFromFileName(fileName) {
+    // Loại bỏ phần mở rộng file (.xlsx, .xls, v.v.)
+    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
+    
+    // Các pattern để match tháng: Thang1, Thang_1, T1, thang1, thang_01, Thang01, v.v.
+    // Pattern: (Thang|T|thang|THANG)(_)?(\d{1,2})
+    const patterns = [
+        /(?:thang|t)[\s_-]?(\d{1,2})/i,  // Thang1, Thang_1, T1, thang 1, thang-1, v.v.
+    ];
+    
+    for (let pattern of patterns) {
+        const match = nameWithoutExt.match(pattern);
+        if (match) {
+            const monthNum = parseInt(match[1], 10);
+            
+            // Validate tháng phải từ 1-12
+            if (monthNum >= 1 && monthNum <= 12) {
+                return {
+                    isValid: true,
+                    month: monthNum,
+                    monthFormatted: monthNum.toString().padStart(2, '0')
+                };
+            }
+        }
+    }
+    
+    return {
+        isValid: false,
+        month: null,
+        monthFormatted: null
+    };
+}
+
+// Hàm hiển thị lỗi validation tháng
+function showMonthValidationError(fileName) {
+    const errorMsg = `
+        <div style="padding:15px; background:#fff3cd; border:1px solid #ffc107; border-radius:8px; color:#856404;">
+            <strong>⚠️ Tên file không hợp lệ!</strong><br>
+            <span style="font-size:0.95em;">Tên file phải chứa thông tin tháng theo một trong các dạng sau:</span>
+            <ul style="margin:10px 0 0 20px; font-size:0.9em;">
+                <li>Thang1, Thang_1, Thang-1, Thang 1</li>
+                <li>thang1, thang_1, thang-1, thang 1</li>
+                <li>T1, T_1, T-1, T 1</li>
+                <li>Thang01, thang_01, T01, v.v.</li>
+            </ul>
+            <div style="margin-top:10px; font-size:0.9em;">
+                <strong>File của bạn:</strong> ${fileName}
+            </div>
+        </div>
+    `;
+    return errorMsg;
+}
+
 // Hàm parse số (xử lý cả số có dấu phẩy, chấm)
 function parseNumber(value) {
     if (typeof value === 'number') return value;
@@ -418,8 +683,9 @@ function formatCurrency(value) {
 
 // Hàm format số tiền cho Excel (với dấu phẩy)
 function formatCurrencyForExcel(value) {
-    if (!value || value === 0) return '';
-    return value.toLocaleString('en-US');
+    const num = parseNumber(value);
+    if (num === 0) return 0; // Giữ nguyên 0 thay vì trả về chuỗi rỗng
+    return num.toLocaleString('en-US');
 }
 
 // Hàm cập nhật STT
@@ -444,7 +710,7 @@ function renderTable() {
     if (!masterData || masterData.length === 0) {
         dataTableBody.innerHTML = `
             <tr>
-                <td colspan="7" class="empty-message">Chưa có dữ liệu. Vui lòng upload file mẫu.</td>
+                <td colspan="10" class="empty-message">Chưa có dữ liệu. Vui lòng upload file mẫu.</td>
             </tr>
         `;
         return;
@@ -465,6 +731,12 @@ function renderTable() {
                 <td>${formatCurrency(getCellValue(row, COLUMNS.HOA_HONG))}</td>
                 <td>${formatCurrency(getCellValue(row, COLUMNS.THUE))}</td>
                 <td>${formatCurrency(getCellValue(row, COLUMNS.TIEN_TRA))}</td>
+                <td>${formatCurrency(getCellValue(row, COLUMNS.HOA_HONG_DA_CAP))}</td>
+                <td>${formatCurrency(getCellValue(row, COLUMNS.THUE_DA_CAP))}</td>
+                <td>${formatCurrency(getCellValue(row, COLUMNS.TIEN_TRA_DA_CAP))}</td>
+                <td>${formatCurrency(getCellValue(row, COLUMNS.HOA_HONG_CAN_CAP))}</td>
+                <td>${formatCurrency(getCellValue(row, COLUMNS.THUE_CAN_CAP))}</td>
+                <td>${formatCurrency(getCellValue(row, COLUMNS.TIEN_TRA_CAN_CAP))}</td>
             </tr>
         `;
     }
@@ -484,10 +756,12 @@ function saveToLocalStorage() {
     try {
         const dataToSave = {
             masterData: masterData,
+            masterHeaderRowIndex: masterHeaderRowIndex,
             filesProcessed: filesProcessed,
             newCTVCount: newCTVCount,
             updatedCTVCount: updatedCTVCount,
-            uploadedFiles: uploadedFiles
+            uploadedFiles: uploadedFiles,
+            currentMonthInfo: currentMonthInfo
         };
         localStorage.setItem('tool_ctv_data', JSON.stringify(dataToSave));
     } catch (error) {
@@ -502,10 +776,12 @@ function loadFromLocalStorage() {
         if (savedData) {
             const data = JSON.parse(savedData);
             masterData = data.masterData;
+            masterHeaderRowIndex = data.masterHeaderRowIndex || 0;
             filesProcessed = data.filesProcessed || 0;
             newCTVCount = data.newCTVCount || 0;
             updatedCTVCount = data.updatedCTVCount || 0;
             uploadedFiles = data.uploadedFiles || [];
+            currentMonthInfo = data.currentMonthInfo || null;
             
             if (masterData && masterData.length > 0) {
                 exportBtn.disabled = false;
